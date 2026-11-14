@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Pointage — masque des séraphins</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.4 -apple-system, system-ui, sans-serif; background: #1b1b1d; color: #ddd;
+         display: grid; grid-template-columns: 1fr 310px; height: 100vh; overflow: hidden; }
+  #vue { position: relative; overflow: hidden; background: #111; }
+  #cv { display: block; width: 100%; height: 100%; cursor: crosshair; }
+  #loupe { position: absolute; right: 10px; top: 10px; width: 200px; height: 200px; border: 1px solid #666;
+           background: #000; pointer-events: none; }
+  #vide { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+          text-align: center; color: #888; pointer-events: none; padding: 40px; }
+  aside { padding: 10px; overflow-y: auto; border-left: 1px solid #333; }
+  h1 { font-size: 14px; margin: 0 0 8px; }
+  h2 { font-size: 12px; margin: 12px 0 4px; color: #aaa; text-transform: uppercase; letter-spacing: .04em; }
+  button, select, input[type=file] { font: inherit; }
+  button { background: #333; color: #eee; border: 1px solid #555; border-radius: 4px; padding: 3px 8px; cursor: pointer; }
+  button:hover { background: #444; }
+  .rang { display: flex; gap: 4px; flex-wrap: wrap; margin: 4px 0; }
+  #courant { background: #2a2416; border: 1px solid #a8842a; border-radius: 4px; padding: 6px 8px; margin: 6px 0; }
+  #courant b { font-size: 18px; color: #ffd257; }
+  #schema { width: 100%; background: #222; border-radius: 4px; }
+  #liste { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
+  #liste span { text-align: center; padding: 2px 0; border-radius: 3px; background: #2a2a2c; cursor: pointer; font-size: 11px; }
+  #liste span.fait { background: #1f4a2c; }
+  #liste span.saute { background: #4a2a1f; text-decoration: line-through; }
+  #liste span.actif { outline: 2px solid #ffd257; }
+  textarea { width: 100%; height: 90px; background: #111; color: #9c9; border: 1px solid #444; font: 11px ui-monospace, monospace; }
+  small { color: #888; }
+  kbd { background: #333; border-radius: 3px; padding: 0 4px; font: 11px ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<div id="vue">
+  <canvas id="cv"></canvas>
+  <canvas id="loupe" width="200" height="200"></canvas>
+  <div id="vide">Choisir une photo à droite<br>(ou glisser-déposer une image ici)</div>
+</div>
+<aside>
+  <h1>Pointage du masque</h1>
+  <div class="rang">
+    <button data-photo="A">Photo A (frontale)</button>
+    <button data-photo="B">Photo B (oblique)</button>
+  </div>
+  <div class="rang"><input type="file" id="fichier" accept="image/*"></div>
+  <small id="info">Aucune image.</small>
+
+  <div class="rang">
+    <button data-mode="sommets">Mode sommets</button>
+    <button data-mode="aretes">Mode arêtes</button>
+    <button id="droite" style="display:none">Montrer la droite (D)</button>
+  </div>
+  <div id="courant">Point à cliquer : <b id="nom">—</b><br><span id="aide"></span></div>
+  <div class="rang">
+    <button id="sauter" title="Point caché ou illisible">Invisible (S)</button>
+    <button id="prec">← Préc.</button>
+    <button id="suiv">Suiv. →</button>
+    <button id="effacer">Effacer (⌫)</button>
+  </div>
+
+  <h2>Où est ce point (schéma de face)</h2>
+  <svg id="schema" viewBox="-80 -112 160 224"></svg>
+
+  <h2>Points</h2>
+  <div id="liste"></div>
+
+  <h2>Export</h2>
+  <textarea id="json" readonly></textarea>
+  <div class="rang">
+    <button id="copier">Copier</button>
+    <button id="telecharger">Télécharger .json</button>
+    <button id="anciens" title="Charge le pointé grossier de la session précédente">Charger ancien pointé</button>
+    <button id="raz">Tout effacer</button>
+  </div>
+
+  <h2>Aide</h2>
+  <small>
+    Clic = poser le point courant, passe au suivant.<br>
+    Molette = zoom. Glisser = déplacer l'image. Glisser un point = le corriger.<br>
+    <kbd>←↑↓→</kbd> décale le point courant de 0,5 px (<kbd>Maj</kbd> : 5 px).<br>
+    <kbd>S</kbd> invisible, <kbd>⌫</kbd> effacer, <kbd>F</kbd> recadrer.<br>
+    Numérotation : 0 en haut, puis vers la <b>gauche</b> (sens anti-horaire) vu de face.
+    R, V, Q d'indice k sont <b>entre</b> les branches k et k+1.<br>
+    Sauvegarde automatique dans le navigateur. Coordonnées en pixels de l'image d'origine.
+  </small>
+</aside>
+
+<script>
+const PHOTOS = {
+  A: { cle: 'museeA', fichier: 'analyse/donnees/musee_a.json',
+       url: 'https://img.piri.net/piri/upload/3/2024/5/22/9af35abe-5da37f60-af34-473d-add4-7818c25ab6aa.jpeg' },
+  B: { cle: 'museeB', fichier: 'analyse/donnees/musee_b.json',
+       url: 'https://ayasofyagunlugu.wordpress.com/wp-content/uploads/2025/01/535b673e-a530-4c36-818b-da5ef1cfe0e8.jpg' },
+};
+const AIDE = {
+  T: 'Pointe extérieure de la branche, là où elle touche le bord.',
+  C: 'Sommet central (point le plus haut, où les 8 plis se rejoignent).',
+  M: 'Sur la gouttière de la branche : le nœud où le chevron V-M-V la croise.',
+  P: 'Pointe de la petite étoile centrale, sur l\'axe de la branche.',
+  V: 'Épaule : creux entre deux branches voisines (sommet haut de l\'entre-branche).',
+  R: 'Fond de l\'encoche, à plat sur le rebord, entre deux pointes.',
+  Q: 'Fond du losange creux central, entre deux pointes P.',
+};
+const SOMMETS = [];
+for (let k = 0; k < 8; k++) SOMMETS.push('T' + k);
+SOMMETS.push('C');
+for (const f of ['M', 'P', 'V', 'R', 'Q']) for (let k = 0; k < 8; k++) SOMMETS.push(f + k);
+// mode arêtes : un point vers le milieu de chaque arête longue, pour tester si elle est droite
+const ARETES = [];
+for (let k = 0; k < 8; k++) ARETES.push(`T${k}-V${k}`);
+for (let k = 0; k < 8; k++) ARETES.push(`T${k}-V${(k + 7) % 8}`);
+for (let k = 0; k < 8; k++) ARETES.push(`T${k}-M${k}`);
+for (let k = 0; k < 8; k++) ARETES.push(`P${k}-V${k}`);
+for (let k = 0; k < 8; k++) ARETES.push(`P${k}-V${(k + 7) % 8}`);
+for (let k = 0; k < 8; k++) ARETES.push(`C-P${k}`);
+const TOUS = [...SOMMETS, ...ARETES];
+let NOMS = SOMMETS, mode = 'sommets', droite = false;
+const estArete = n => n.includes('-');
+const bouts = n => n.split('-');
+const coul = n => estArete(n) ? '#ff4fd8' : COUL[n[0]];
+const aide = n => estArete(n)
+  ? `Cliquer SUR l'arête entre ${bouts(n)[0]} et ${bouts(n)[1]} (cercles blancs), vers son milieu. Suivre le pli réel, pas la ligne droite.`
+  : AIDE[n[0]];
+function ecart(n) {   // écart signé (px) du point d'arête à la corde entre ses deux sommets
+  const [A, B] = bouts(n).map(x => pts[x]), p = pts[n];
+  if (!A || !B || !p) return null;
+  const L = Math.hypot(B[0] - A[0], B[1] - A[1]);
+  return { d: ((B[0] - A[0]) * (p[1] - A[1]) - (B[1] - A[1]) * (p[0] - A[0])) / L, L,
+           t: ((p[0] - A[0]) * (B[0] - A[0]) + (p[1] - A[1]) * (B[1] - A[1])) / L / L };
+}
+const COUL = { T: '#ff5a5a', C: '#ffffff', M: '#5ad1ff', P: '#ffd257', V: '#7dff7a', R: '#ff9a3c', Q: '#d08bff' };
+
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const lp = document.getElementById('loupe'), lctx = lp.getContext('2d');
+const $ = id => document.getElementById(id);
+let img = null, cle = 'image', pts = {}, sautes = {}, actif = 0;
+let s = 1, ox = 0, oy = 0, souris = null, modele = null;
+
+// ---------------------------------------------------------------- état
+function sauver() {
+  localStorage.setItem('pointage:' + cle, JSON.stringify({ pts, sautes }));
+  const so = {}, ar = {};
+  for (const n of SOMMETS) if (pts[n]) so[n] = pts[n];
+  for (const n of ARETES) if (pts[n]) ar[n] = pts[n];
+  const o = { [cle]: so }; if (Object.keys(ar).length) o[cle + '_aretes'] = ar;
+  $('json').value = JSON.stringify(o).replace(/"([A-Z][\w-]*)":\[/g, '\n "$1":[');
+}
+function charger() {
+  try { const d = JSON.parse(localStorage.getItem('pointage:' + cle)) || {}; pts = d.pts || {}; sautes = d.sautes || {}; }
+  catch { pts = {}; sautes = {}; }
+  actif = Math.max(0, NOMS.findIndex(n => !pts[n] && !sautes[n]));
+  maj();
+}
+function maj() { sauver(); liste(); schema(); dessiner(); }
+function aller(i) { actif = (i + NOMS.length) % NOMS.length; maj(); }
+function suivantLibre() {
+  for (let j = 1; j <= NOMS.length; j++) { const i = (actif + j) % NOMS.length; if (!pts[NOMS[i]] && !sautes[NOMS[i]]) return aller(i); }
+  maj();
+}
+
+// ---------------------------------------------------------------- image
+function poserImage(src, nom, c) {
+  const im = new Image();
+  im.onload = () => { img = im; cle = c; $('vide').style.display = 'none';
+    $('info').textContent = `${nom} — ${im.naturalWidth}×${im.naturalHeight} px`; cadrer(); charger(); };
+  im.onerror = () => { $('info').textContent = 'Chargement impossible : enregistrer la photo puis la choisir ci-dessus.'; };
+  im.src = src;
+}
+function cadrer() {
+  if (!img) return;
+  const r = cv.getBoundingClientRect();
+  s = Math.min(r.width / img.naturalWidth, r.height / img.naturalHeight) * 0.97;
+  ox = (r.width - img.naturalWidth * s) / 2; oy = (r.height - img.naturalHeight * s) / 2;
+  dessiner();
+}
+document.querySelectorAll('[data-photo]').forEach(b => b.onclick = () => {
+  const p = PHOTOS[b.dataset.photo]; poserImage(p.url, 'Photo ' + b.dataset.photo, p.cle); });
+function fichierLocal(f) {
+  const m = /(^|[^a-z])b([^a-z]|$)|oblique|535b/i.test(f.name) ? 'museeB' : /9af35|frontal/i.test(f.name) ? 'museeA' : null;
+  const c = m || prompt('Nom de la vue (clé du JSON) :', 'museeA') || 'image';
+  poserImage(URL.createObjectURL(f), f.name, c);
+}
+$('fichier').onchange = e => e.target.files[0] && fichierLocal(e.target.files[0]);
+addEventListener('dragover', e => e.preventDefault());
+addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) fichierLocal(f); });
+
+// ---------------------------------------------------------------- dessin
+function dessiner() {
+  const r = cv.getBoundingClientRect(), d = devicePixelRatio || 1;
+  if (cv.width !== Math.round(r.width * d) || cv.height !== Math.round(r.height * d)) { cv.width = r.width * d; cv.height = r.height * d; }
+  ctx.setTransform(d, 0, 0, d, 0, 0); ctx.clearRect(0, 0, r.width, r.height);
+  if (!img) return;
+  ctx.imageSmoothingEnabled = s < 3;
+  ctx.drawImage(img, ox, oy, img.naturalWidth * s, img.naturalHeight * s);
+  marques(ctx, p => [ox + p[0] * s, oy + p[1] * s], true);
+  loupe();
+}
+function marques(c, proj, noms) {
+  if (mode === 'aretes') {   // repères de l'arête courante : ses deux sommets (et la corde si demandée)
+    const [A, B] = bouts(NOMS[actif]).map(x => pts[x]);
+    if (A && B) { const a = proj(A), b = proj(B);
+      c.strokeStyle = '#fff'; c.lineWidth = 1.5;
+      for (const q of [a, b]) { c.beginPath(); c.arc(q[0], q[1], 14, 0, 7); c.stroke(); }
+      if (droite) { c.strokeStyle = 'rgba(0,255,255,.8)'; c.lineWidth = 1; c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke(); } }
+  }
+  for (const n of (mode === 'aretes' ? ARETES : TOUS)) {
+    const p = pts[n]; if (!p) continue;
+    const [x, y] = proj(p), a = n === NOMS[actif];
+    c.strokeStyle = coul(n); c.lineWidth = a ? 2 : 1;
+    c.beginPath(); c.moveTo(x - 9, y); c.lineTo(x - 2, y); c.moveTo(x + 2, y); c.lineTo(x + 9, y);
+    c.moveTo(x, y - 9); c.lineTo(x, y - 2); c.moveTo(x, y + 2); c.lineTo(x, y + 9); c.stroke();
+    if (a) { c.beginPath(); c.arc(x, y, 12, 0, 7); c.stroke(); }
+    if (noms && (!estArete(n) || a)) { c.font = '11px sans-serif'; c.fillStyle = '#000'; c.fillText(n, x + 7, y - 5); c.fillStyle = coul(n); c.fillText(n, x + 6, y - 6); }
+  }
+}
+function loupe() {
+  lctx.fillStyle = '#000'; lctx.fillRect(0, 0, 200, 200);
+  if (!img) return;
+  let c = souris ? [(souris[0] - ox) / s, (souris[1] - oy) / s] : pts[NOMS[actif]];
+  if (!c) return;
+  const z = Math.max(6, s * 3);
+  lctx.imageSmoothingEnabled = false;
+  lctx.drawImage(img, c[0] - 100 / z, c[1] - 100 / z, 200 / z, 200 / z, 0, 0, 200, 200);
+  marques(lctx, p => [100 + (p[0] - c[0]) * z, 100 + (p[1] - c[1]) * z], false);
+  lctx.strokeStyle = 'rgba(255,255,255,.7)'; lctx.lineWidth = 1;
+  lctx.beginPath(); lctx.moveTo(100, 0); lctx.lineTo(100, 92); lctx.moveTo(100, 108); lctx.lineTo(100, 200);
+  lctx.moveTo(0, 100); lctx.lineTo(92, 100); lctx.moveTo(108, 100); lctx.lineTo(200, 100); lctx.stroke();
+}
+
+// ---------------------------------------------------------------- liste + schéma
+function liste() {
+  const n0 = NOMS[actif];
+  $('nom').textContent = n0; $('aide').textContent = aide(n0);
+  if (mode === 'aretes') {
+    const e = ecart(n0), [A, B] = bouts(n0);
+    $('aide').textContent += !pts[A] || !pts[B] ? ` ⚠ sommet ${!pts[A] ? A : B} non pointé : passer (S).`
+      : e ? ` Écart à la droite : ${e.d >= 0 ? '+' : ''}${e.d.toFixed(1)} px (${(100 * Math.abs(e.d) / e.L).toFixed(1)} % de l'arête).` : '';
+  }
+  $('liste').style.gridTemplateColumns = mode === 'aretes' ? 'repeat(4, 1fr)' : 'repeat(8, 1fr)';
+  $('liste').innerHTML = NOMS.map((n, i) =>
+    `<span data-i="${i}" class="${pts[n] ? 'fait' : sautes[n] ? 'saute' : ''} ${i === actif ? 'actif' : ''}"` +
+    `${n === 'C' ? ' style="grid-column:1/-1"' : ''}>${n}</span>`).join('');
+}
+$('liste').onclick = e => { if (e.target.dataset.i) aller(+e.target.dataset.i); };
+function schema() {
+  if (!modele) return;
+  const P = n => { if (estArete(n)) { const [a, b] = bouts(n).map(P); return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; }
+    const v = modele[n]; return [v[0], -v[1]]; };
+  const L = (a, b, col) => { const p = P(a), q = P(b); return `<line x1="${p[0]}" y1="${p[1]}" x2="${q[0]}" y2="${q[1]}" stroke="${col}" stroke-width=".5"/>`; };
+  let h = `<ellipse rx="${modele.T6[0]}" ry="${modele.T0[1]}" fill="none" stroke="#555" stroke-width=".6"/>`;
+  for (let k = 0; k < 8; k++) {
+    const k1 = (k + 1) % 8;
+    h += L('T' + k, 'R' + k, '#888') + L('R' + k, 'T' + k1, '#888') + L('T' + k, 'M' + k, '#666') + L('M' + k, 'P' + k, '#666') +
+         L('P' + k, 'C', '#666') + L('T' + k, 'V' + k, '#666') + L('V' + k, 'T' + k1, '#666') + L('V' + k, 'M' + k, '#555') +
+         L('V' + k, 'M' + k1, '#555') + L('V' + k, 'P' + k, '#555') + L('V' + k, 'P' + k1, '#555') + L('V' + k, 'R' + k, '#555') +
+         L('V' + k, 'Q' + k, '#555') + L('Q' + k, 'C', '#555') + L('Q' + k, 'P' + k, '#555') + L('Q' + k, 'P' + k1, '#555');
+  }
+  for (const n of NOMS) { const p = P(n), a = n === NOMS[actif];
+    h += `<circle cx="${p[0]}" cy="${p[1]}" r="${a ? 4 : 1.3}" fill="${a ? '#ffd257' : pts[n] ? '#3c9a56' : '#777'}"${a ? ' stroke="#fff" stroke-width=".8"' : ''}/>`; }
+  if (mode === 'aretes') { const [a, b] = bouts(NOMS[actif]).map(P);
+    h += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="#ffd257" stroke-width="2"/>`; }
+  const p = P(NOMS[actif]);
+  h += `<text x="${p[0] + 6}" y="${p[1] - 5}" fill="#ffd257" font-size="10" font-weight="bold">${NOMS[actif]}</text>`;
+  $('schema').innerHTML = h;
+}
+fetch('sortie/sommets.json').then(r => r.json()).then(d => { modele = d.sommets_mm; schema(); }).catch(() => {});
+
+// ---------------------------------------------------------------- souris
+let appui = null;
+const pos = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+function proche(m) {
+  let best = null, bd = 10;
+  for (const n of NOMS) if (pts[n]) { const d = Math.hypot(ox + pts[n][0] * s - m[0], oy + pts[n][1] * s - m[1]); if (d < bd) { bd = d; best = n; } }
+  return best;
+}
+cv.onpointerdown = e => { if (!img) return; cv.setPointerCapture(e.pointerId);
+  const m = pos(e); appui = { m, ox, oy, bouge: false, pt: proche(m) };
+  if (appui.pt) { actif = NOMS.indexOf(appui.pt); liste(); schema(); } };
+cv.onpointermove = e => {
+  souris = pos(e);
+  if (appui) {
+    const dx = souris[0] - appui.m[0], dy = souris[1] - appui.m[1];
+    if (Math.hypot(dx, dy) > 3) appui.bouge = true;
+    if (appui.bouge) {
+      if (appui.pt) pts[appui.pt] = arr((souris[0] - ox) / s, (souris[1] - oy) / s);
+      else { ox = appui.ox + dx; oy = appui.oy + dy; }
+    }
+  }
+  dessiner();
+};
+cv.onpointerup = e => {
+  if (!appui) return;
+  const a = appui; appui = null;
+  if (a.bouge) { if (a.pt) maj(); return; }
+  if (a.pt) return;
+  const n = NOMS[actif];
+  pts[n] = arr((a.m[0] - ox) / s, (a.m[1] - oy) / s); delete sautes[n];
+  suivantLibre();
+};
+cv.onpointerleave = () => { souris = null; dessiner(); };
+cv.addEventListener('wheel', e => { e.preventDefault(); if (!img) return;
+  const m = pos(e), f = Math.exp(-e.deltaY * 0.0025), ns = Math.min(60, Math.max(0.05, s * f));
+  ox = m[0] - (m[0] - ox) * ns / s; oy = m[1] - (m[1] - oy) * ns / s; s = ns; dessiner(); }, { passive: false });
+const arr = (x, y) => [Math.round(x * 4) / 4, Math.round(y * 4) / 4];
+
+// ---------------------------------------------------------------- boutons / clavier
+const sauter = () => { const n = NOMS[actif]; delete pts[n]; sautes[n] = 1; suivantLibre(); };
+const effacer = () => { const n = NOMS[actif]; delete pts[n]; delete sautes[n]; maj(); };
+$('sauter').onclick = sauter; $('effacer').onclick = effacer;
+$('prec').onclick = () => aller(actif - 1); $('suiv').onclick = () => aller(actif + 1);
+$('raz').onclick = () => { if (confirm(mode === 'aretes' ? 'Effacer tous les points d\'arête de cette vue ?' : 'Effacer tous les sommets de cette vue ?')) {
+  for (const n of NOMS) { delete pts[n]; delete sautes[n]; } actif = 0; maj(); } };
+function setMode(m) { mode = m; NOMS = m === 'aretes' ? ARETES : SOMMETS;
+  document.querySelectorAll('[data-mode]').forEach(b => b.style.outline = b.dataset.mode === m ? '2px solid #ffd257' : 'none');
+  $('droite').style.display = m === 'aretes' ? '' : 'none';
+  actif = Math.max(0, NOMS.findIndex(n => !pts[n] && !sautes[n])); maj(); }
+document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => setMode(b.dataset.mode));
+$('droite').onclick = () => { droite = !droite; $('droite').textContent = droite ? 'Cacher la droite (D)' : 'Montrer la droite (D)'; dessiner(); };
+$('copier').onclick = () => navigator.clipboard.writeText($('json').value).then(() => { $('copier').textContent = 'Copié ✓'; setTimeout(() => $('copier').textContent = 'Copier', 1200); });
+$('telecharger').onclick = () => { const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([$('json').value + '\n'], { type: 'application/json' }));
+  a.download = cle.replace(/([A-Z])$/, '_$1').toLowerCase() + '_precis.json'; a.click(); };
+$('anciens').onclick = () => { const p = Object.values(PHOTOS).find(p => p.cle === cle);
+  if (!p) return alert('Pas d\'ancien pointé pour cette vue.');
+  fetch(p.fichier).then(r => r.json()).then(d => { pts = Object.assign({}, d[cle], pts); charger_actif(); }).catch(() => alert('Fichier introuvable.')); };
+function charger_actif() { actif = Math.max(0, NOMS.findIndex(n => !pts[n] && !sautes[n])); maj(); }
+addEventListener('keydown', e => {
+  const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+  const n = NOMS[actif];
+  if (d && pts[n]) { const q = e.shiftKey ? 5 : 0.5; pts[n] = [pts[n][0] + d[0] * q, pts[n][1] + d[1] * q]; e.preventDefault(); maj(); }
+  else if (e.key === 's' || e.key === 'S') sauter();
+  else if (e.key === 'Backspace' || e.key === 'Delete') effacer();
+  else if (e.key === 'f' || e.key === 'F') cadrer();
+  else if ((e.key === 'd' || e.key === 'D') && mode === 'aretes') $('droite').click();
+  else if (e.key === 'Tab') { e.preventDefault(); aller(actif + (e.shiftKey ? -1 : 1)); }
+});
+addEventListener('resize', cadrer);
+setMode('sommets');
+</script>
+</body>
+</html>

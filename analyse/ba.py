@@ -196,7 +196,8 @@ def main():
     out = {}
     for k, v, sd in zip(SHAPE_NAMES, x[:nshape], std):
         out[k] = (round(v, 3), round(sd, 3))
-        print(f"  {k:6s} {v:7.3f} ± {sd:.3f}   (modèle {S0[k]})")
+        err = f"± {sd:.3f}" if sd < 10 else "(non observé)"
+        print(f"  {k:6s} {v:7.3f} {err}   (modèle {S0[k]})")
     for fi, fr in enumerate(frames):
         cam = x[nshape + 7 * fi: nshape + 7 * fi + 7]
         R = rodrigues(cam[:3])
