@@ -164,11 +164,11 @@ oblique, `donnees/musee_b_aretes.json`) :
 
 ## Rendu photoréaliste (2026-11-14)
 
-- `rendu/rendu_blender.py` : Blender 5.2 (installé, `/opt/homebrew/bin/blender`), Cycles GPU Metal,
-  laiton doré patiné, fond velours, 4 vues (face, trois_quarts, rasante, profil).
-  `blender -b -P rendu/rendu_blender.py -- [--stl sortie_cintre/masque.stl] [--samples 128] [--res 1600] [--blend rendu/masque.blend]`
-  ~2 min pour 4 vues à 1600 px / 128 échantillons sur M1 Pro. Images dans `rendu/images/`.
-  `rendu/masque.blend` : scène à ouvrir dans Blender pour tourner autour librement.
+- `rendu/rendu_blender.py` : Blender 4.2+ (Cycles, GPU choisi seul : OptiX sur RTX, Metal sur Mac).
+  4 vues fixes, 5 matières (dore, or, bronze, vertdegris, zinc), 3 fonds (velours, blanc,
+  transparent), formats carré/portrait/paysage jusqu'en 8K, animations `balancier` et `lumiere`.
+  Mode d'emploi complet, installation Windows comprise : **`RENDU.md`**.
+  Images dans `rendu/images/` ; `rendu/masque.blend` = scène à ouvrir dans Blender.
 
 ## Version portable — décisions de l'auteur (2026-11-14)
 
