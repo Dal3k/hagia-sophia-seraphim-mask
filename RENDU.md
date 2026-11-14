@@ -73,7 +73,8 @@ Une RTX 4080 sous OptiX va environ 5 à 10 fois plus vite, soit 1 à 3 min par v
 | `--fond` | `velours`, `blanc`, `transparent` | `transparent` = PNG détouré avec l'ombre portée |
 | `--anim` | `aucune`, `balancier`, `lumiere` | animations, voir §5 |
 | `--images` | 120 | nombre d'images de l'animation (24 par seconde) |
-| `--stl` | `sortie_cintre/masque.stl` | `sortie/masque.stl` pour le polyèdre pur |
+| `--objet` | `masque`, `bague` | `bague` : scène à l'échelle bijou, vues trois_quarts, dessus, profil, bout |
+| `--stl` | `sortie_cintre/masque.stl` | `sortie/masque.stl` pour le polyèdre pur ; `bague/sortie/bague_t54_gouttiere.stl`… |
 | `--gpu` | `auto`, `OPTIX`, `CUDA`, `METAL`, `CPU` | `auto` choisit le meilleur |
 | `--blend` | `rendu/masque.blend` | enregistre la scène pour l'ouvrir dans Blender |
 
@@ -85,6 +86,14 @@ Matières :
   C'est l'aperçu de la future fonte.
 - `vertdegris` : bronze ancien, avec du vert-de-gris logé dans les creux.
 - `zinc` : zinc nu, la matière d'origine des Fossati sous la dorure.
+
+### Bague
+
+```powershell
+& $blender -b -P bague/bague.py -- --taille 54 --motif losanges          # génère le STL
+& $blender -b -P rendu/rendu_blender.py -- --objet bague --res 3840 --samples 512 --out bague/images
+& $blender -b -P rendu/rendu_blender.py -- --objet bague --vues aucune --anim lumiere --res 2160 --samples 256
+```
 
 ## 5. Animations
 

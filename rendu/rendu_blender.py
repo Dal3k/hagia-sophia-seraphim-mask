@@ -32,10 +32,13 @@ def chemin(p):
     return p if os.path.isabs(p) else os.path.join(RACINE, p)
 
 
-def regarde(obj, cible):
-    """Oriente obj (caméra/lampe, visée -Z) vers cible, haut = +Y monde (haut du masque)."""
+def regarde(obj, cible, haut=(0, 1, 0)):
+    """Oriente obj (caméra/lampe, visée -Z) vers cible ; haut de l'image = `haut`
+    (+Y = haut du masque ; +Z pour la bague debout), sauf si on vise dans cet axe."""
     f = (Vector(cible) - obj.location).normalized()
-    up = Vector((0, 1, 0)) if abs(f.y) < 0.95 else Vector((0, 0, 1))
+    up = Vector(haut)
+    if abs(f.dot(up)) > 0.95:
+        up = Vector((0, 1, 0)) if abs(f.y) < 0.95 else Vector((0, 0, 1))
     r = f.cross(up).normalized()
     u = r.cross(f)
     obj.rotation_euler = Matrix((r, u, -f)).transposed().to_euler()
@@ -43,7 +46,8 @@ def regarde(obj, cible):
 
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 ap = argparse.ArgumentParser()
-ap.add_argument("--stl", default="sortie_cintre/masque.stl")
+ap.add_argument("--objet", default="masque", choices=["masque", "bague"])
+ap.add_argument("--stl", default="")
 ap.add_argument("--out", default="rendu/images")
 ap.add_argument("--samples", type=int, default=128)
 ap.add_argument("--res", type=int, default=1600)
@@ -56,6 +60,11 @@ ap.add_argument("--images", type=int, default=120)
 ap.add_argument("--gpu", default="auto")
 ap.add_argument("--blend", default="", help="enregistrer la scène .blend (pour l'ouvrir dans Blender)")
 a = ap.parse_args(argv)
+BAGUE = a.objet == "bague"
+if not a.stl:
+    a.stl = "bague/sortie/bague_t54_losanges.stl" if BAGUE else "sortie_cintre/masque.stl"
+# échelle de la scène (caméra, lampes, détails de matière) : 1 pour le masque de 200 mm
+E = 0.12 if BAGUE else 1.0
 OUT = chemin(a.out)
 os.makedirs(OUT, exist_ok=True)
 
@@ -113,6 +122,10 @@ m.name = "masque"
 for p in m.data.polygons:
     p.use_smooth = False
 zmax = max(v.co.z for v in m.data.vertices)
+zmin = min(v.co.z for v in m.data.vertices)
+# point visé et hauteur visée par les lampes
+zc = (zmax + zmin) / 2 if BAGUE else zmax * 0.35
+zl = zc if BAGUE else zmax * 0.4
 
 # Matières : (couleur sombre, couleur claire, rugosité min, max, couleur des creux ou None)
 MATIERES = {
@@ -134,7 +147,7 @@ bsdf.inputs["Metallic"].default_value = 1.0
 # variation de teinte et de rugosité (patine, usure)
 tc = nt.nodes.new("ShaderNodeTexCoord")
 noise = nt.nodes.new("ShaderNodeTexNoise")
-noise.inputs["Scale"].default_value = 0.035
+noise.inputs["Scale"].default_value = 0.035 / E
 noise.inputs["Detail"].default_value = 8
 nt.links.new(tc.outputs["Object"], noise.inputs["Vector"])
 ramp = nt.nodes.new("ShaderNodeValToRGB")
@@ -152,7 +165,7 @@ couleur = ramp.outputs["Color"]
 if creux:
     # patine logée au fond des plis (occlusion ambiante) : métal frotté sur les crêtes
     ao = nt.nodes.new("ShaderNodeAmbientOcclusion")
-    ao.inputs["Distance"].default_value = 12.0
+    ao.inputs["Distance"].default_value = 12.0 * E
     ao.samples = 16
     pr = nt.nodes.new("ShaderNodeMapRange")
     pr.inputs["From Min"].default_value = 0.55
@@ -169,14 +182,14 @@ if creux:
 nt.links.new(couleur, bsdf.inputs["Base Color"])
 # arêtes adoucies au rendu (reflets fins sur les plis, géométrie inchangée)
 bev = nt.nodes.new("ShaderNodeBevel")
-bev.inputs["Radius"].default_value = 0.35
+bev.inputs["Radius"].default_value = 0.35 * E
 bev.samples = 8
 nt.links.new(bev.outputs["Normal"], bsdf.inputs["Normal"])
 nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
 m.data.materials.append(mat)
 
 # --- fond --------------------------------------------------------------------
-bpy.ops.mesh.primitive_plane_add(size=4000, location=(0, 0, -1))
+bpy.ops.mesh.primitive_plane_add(size=4000 * E, location=(0, 0, zmin - 0.01 if BAGUE else -1))
 fond = bpy.context.object
 fm = bpy.data.materials.new("fond")
 fm.use_nodes = True
@@ -210,10 +223,11 @@ def lampe(nom, pos, energie, taille, couleur=(1, 0.95, 0.88)):
     bpy.ops.object.light_add(type='AREA', location=pos)
     L = bpy.context.object
     L.name = nom
-    L.data.energy = energie
-    L.data.size = taille
+    L.location = Vector(pos) * E + Vector((0, 0, zc if BAGUE else 0))
+    L.data.energy = energie * E * E
+    L.data.size = taille * E
     L.data.color = couleur
-    regarde(L, (0, 0, zmax * 0.4))
+    regarde(L, (0, 0, zl))
     return L
 
 
@@ -222,20 +236,21 @@ contre = lampe("contre", (380, -120, 160), 3.5e5, 120, (0.85, 0.9, 1))
 deb = lampe("debouche", (150, -300, 600), 1.2e5, 500)
 LAMPES = (cle, contre, deb)
 pos0 = {L.name: L.location.copy() for L in LAMPES}
-nrj0 = {L.name: L.data.energy for L in LAMPES}
+nrj0 = {L.name: L.data.energy / (E * E) for L in LAMPES}
 
 # --- caméra ------------------------------------------------------------------
 cam_d = bpy.data.cameras.new("cam")
 cam_d.lens = 150
 cam_d.sensor_fit = 'VERTICAL'   # même cadrage vertical quel que soit le format
 cam_d.sensor_height = 36
+cam_d.clip_start = 0.1
 cam_d.clip_end = 1e5
 cam_d.dof.use_dof = True
-cam_d.dof.aperture_fstop = 11
+cam_d.dof.aperture_fstop = 16 if BAGUE else 11
 cam = bpy.data.objects.new("cam", cam_d)
 sc.collection.objects.link(cam)
 sc.camera = cam
-cible = Vector((0, 0, zmax * 0.35))
+cible = Vector((0, 0, zc))
 
 VUES = {
     # nom : (position caméra, lampes déplacées {nom: position} ou None)
@@ -245,16 +260,29 @@ VUES = {
     "rasante":      ((0, -120, 1040), {"cle": (0, 520, 110), "contre": (-420, -60, 80),
                                        "debouche": (0, -400, 700)}),
 }
+if BAGUE:
+    VUES = {
+        "dessus":       ((0, -60, 1050), None),
+        "trois_quarts": ((-600, -420, 760), None),
+        "profil":       ((1000, -150, 260), None),
+        "bout":         ((150, -900, 520), None),
+        "rasante":      ((0, -120, 1040), {"cle": (0, 520, 110), "contre": (-420, -60, 80),
+                                           "debouche": (0, -400, 700)}),
+    }
+    if a.vues == "face,trois_quarts,rasante,profil":
+        a.vues = "trois_quarts,dessus,profil,bout"
 NRJ_RASANTE = {"cle": 1.6e6, "debouche": 4e4}
 
 
 def place(pos_cam, lum=None, nrj=None):
+    dz = Vector((0, 0, zc if BAGUE else 0))
     for L in LAMPES:
-        L.location = (lum or {}).get(L.name, pos0[L.name])
-        L.data.energy = (nrj or {}).get(L.name, nrj0[L.name])
-        regarde(L, (0, 0, zmax * 0.4))
-    cam.location = pos_cam
-    regarde(cam, cible)
+        q = (lum or {}).get(L.name)
+        L.location = Vector(q) * E + dz if q else pos0[L.name]
+        L.data.energy = (nrj or {}).get(L.name, nrj0[L.name]) * E * E
+        regarde(L, (0, 0, zl))
+    cam.location = Vector(pos_cam) * E + dz
+    regarde(cam, cible, (0, 0, 1) if BAGUE else (0, 1, 0))
     cam_d.dof.focus_distance = (cible - cam.location).length
 
 
@@ -265,15 +293,16 @@ def rend(fichier):
 
 
 suffixe = "" if (a.materiau, a.fond) == ("dore", "velours") else f"_{a.materiau}_{a.fond}"
+prefixe = os.path.splitext(os.path.basename(a.stl))[0] if BAGUE else "masque"
 vues = list(VUES) if a.vues == "toutes" else [] if a.vues == "aucune" else a.vues.split(",")
 for nom in vues:
     pos, lum = VUES[nom]
     place(pos, lum, NRJ_RASANTE if lum else None)
-    rend(os.path.join(OUT, f"masque_{nom}{suffixe}.png"))
+    rend(os.path.join(OUT, f"{prefixe}_{nom}{suffixe}.png"))
 
 # --- animations --------------------------------------------------------------
 if a.anim != "aucune":
-    dossier = os.path.join(OUT, f"anim_{a.anim}_{a.materiau}")
+    dossier = os.path.join(OUT, f"anim_{a.anim}_{a.materiau}" + ("_" + prefixe if BAGUE else ""))
     os.makedirs(dossier, exist_ok=True)
     N = a.images
     for i in range(N):
