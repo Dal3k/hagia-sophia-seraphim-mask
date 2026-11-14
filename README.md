@@ -182,3 +182,7 @@ oblique, `donnees/musee_b_aretes.json`) :
   sommets V1/V7 (épaules, 21.7 mm de haut) ; le nez loge sous le dôme central (C 31 mm).
   Le rebord plat ne suit pas le visage : courber l'étoile sur une surface de visage
   (cylindre/ellipsoïde) est le premier chantier.
+
+## Licence
+
+CC BY-NC 4.0 — libre pour un usage non commercial, en citant l'auteur. Voir `LICENSE`.
