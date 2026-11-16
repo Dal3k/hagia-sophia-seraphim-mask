@@ -165,8 +165,9 @@ oblique, `donnees/musee_b_aretes.json`) :
 ## Rendu photoréaliste (2026-11-14)
 
 - `rendu/rendu_blender.py` : Blender 4.2+ (Cycles, GPU choisi seul : OptiX sur RTX, Metal sur Mac).
-  4 vues fixes, 5 matières (dore, or, bronze, vertdegris, zinc), 3 fonds (velours, blanc,
-  transparent), formats carré/portrait/paysage jusqu'en 8K, animations `balancier` et `lumiere`.
+  4 vues fixes, 5 matières (dore, or, bronze, vertdegris, zinc) et 5 métaux réels (argent, acier,
+  or jaune, laiton, bronze nu) avec finitions, 3 fonds (velours, blanc, transparent), formats
+  carré/portrait/paysage jusqu'en 8K, animations `balancier`, `lumiere` et `vitrine`.
   Mode d'emploi complet, installation Windows comprise : **`RENDU.md`**.
   Images dans `rendu/images/` ; `rendu/masque.blend` = scène à ouvrir dans Blender.
 
@@ -182,27 +183,6 @@ oblique, `donnees/musee_b_aretes.json`) :
   sommets V1/V7 (épaules, 21.7 mm de haut) ; le nez loge sous le dôme central (C 31 mm).
   Le rebord plat ne suit pas le visage : courber l'étoile sur une surface de visage
   (cylindre/ellipsoïde) est le premier chantier.
-
-## Bague-chevalière (2026-11-14)
-
-- `bague/bague.py` (Blender 4.2+) : `blender -b -P bague/bague.py -- [--taille 54] [--motif losanges|gouttiere]`
-  → `bague/sortie/bague_t<taille>_<motif>.stl`, un seul solide étanche, vérifié (0 arête ouverte).
-- Chaton : l'étoile du masque (polyèdre pur, `masque_seraphin.build`) à b = 9 mm, soit 18 × 12.7 mm
-  avec 2.8 mm de relief, grand axe **le long du doigt**. Elle est légèrement cintrée autour du doigt
-  (`--courbure 16` mm, on déplace les sommets : facettes planes, arêtes droites). 1.4 mm de métal
-  sous le rebord ; paroi verticale qui suit l'ellipse ; dessous creusé au rayon du doigt.
-- Anneau dans le langage des plis du masque, 32 sections à facettes planes, plus large aux épaules
-  (6 mm) que dessous (3.2 mm), épaisseur 1.9 → 1.6 mm :
-  - `gouttiere` : deux crêtes et un sillon, qui prolongent la gouttière T-M-P des pointes latérales ;
-  - `losanges` (défaut) : profils W et Λ alternés, soit une file de losanges creux comme l'étoile centrale.
-  Intérieur lisse. Métal ≥ 0.85 mm partout (bords du jonc).
-- Taille 54 (Ø int. 17.2 mm) : volume ≈ 720 mm³, soit ≈ 11 g en or 18 ct, 7.5 g en argent, 6.3 g en bronze.
-- Fabrication visée : impression en cire ou en résine calcinable, puis fonte à la cire perdue chez un bijoutier.
-- Rendus : `blender -b -P rendu/rendu_blender.py -- --objet bague [--stl bague/sortie/bague_t54_gouttiere.stl]`
-  (vues trois_quarts, dessus, profil, bout ; toutes les matières, fonds et animations du masque).
-  Images dans `bague/images/`.
-- Non fait : taille réelle du porteur, vérification par un bijoutier (épaisseurs, dépouille),
-  raccord adouci entre jonc et chaton.
 
 ## Licence
 

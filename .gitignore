@@ -3,4 +3,5 @@ __pycache__/
 .DS_Store
 *.blend1
 rendu/images/anim_*/
+rendu/videos/
 *.mp4

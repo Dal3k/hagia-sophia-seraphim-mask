@@ -69,14 +69,21 @@ Une RTX 4080 sous OptiX va environ 5 à 10 fois plus vite, soit 1 à 3 min par v
 | `--res` | 1600, 3840 (4K), 7680 (8K)… | côté de référence en pixels |
 | `--format` | `carre`, `portrait` (4:5), `paysage` (16:9) | le cadrage vertical reste le même |
 | `--samples` | 128 essai, 512-1024 final | échantillons Cycles (bruit) |
-| `--materiau` | `dore`, `or`, `bronze`, `vertdegris`, `zinc` | voir ci-dessous |
+| `--materiau` | `dore`, `or`, `bronze`, `vertdegris`, `zinc`, `argent`, `acier`, `or_jaune`, `laiton`, `bronze_nu` | voir ci-dessous |
+| `--finition` | `poli`, `poli_ondule`, `satine`, `brosse`, `mixte` | métaux réels seulement |
+| `--studio` | `non`, `oui` | reflets de studio photo (diffuseurs en bandes) |
 | `--fond` | `velours`, `blanc`, `transparent` | `transparent` = PNG détouré avec l'ombre portée |
-| `--anim` | `aucune`, `balancier`, `lumiere` | animations, voir §5 |
-| `--images` | 120 | nombre d'images de l'animation (24 par seconde) |
-| `--objet` | `masque`, `bague` | `bague` : scène à l'échelle bijou, vues trois_quarts, dessus, profil, bout |
-| `--stl` | `sortie_cintre/masque.stl` | `sortie/masque.stl` pour le polyèdre pur ; `bague/sortie/bague_t54_gouttiere.stl`… |
+| `--anim` | `aucune`, `balancier`, `lumiere`, `vitrine` | animations, voir §5 |
+| `--images` | 120 | nombre d'images de balancier / lumiere (24 par seconde) |
+| `--duree`, `--ips` | 20, 30 | vitrine : durée (s) et images par seconde |
+| `--amplitude` | 30 | vitrine : balayage de la caméra (± degrés) |
+| `--vue_video` | `face`, `trois_quarts`… | vitrine : vue de départ (défaut `face`) |
+| `--mp4` | `oui`, `non` | vitrine : assembler la vidéo avec ffmpeg à la fin |
+| `--stl` | `sortie_cintre/masque.stl` | `sortie/masque.stl` pour le polyèdre pur, ou tout autre STL de masque |
 | `--gpu` | `auto`, `OPTIX`, `CUDA`, `METAL`, `CPU` | `auto` choisit le meilleur |
 | `--blend` | `rendu/masque.blend` | enregistre la scène pour l'ouvrir dans Blender |
+| `--patine` | 0 à 1 | force des taches de patine (défaut 1) |
+| `--nom` | `masque_bronze` | préfixe des images, à la place du nom automatique et du suffixe matière/fond |
 
 Matières :
 - `dore` : dorure patinée, la matière par défaut, proche de l'exemplaire du musée.
@@ -86,16 +93,40 @@ Matières :
   C'est l'aperçu de la future fonte.
 - `vertdegris` : bronze ancien, avec du vert-de-gris logé dans les creux.
 - `zinc` : zinc nu, la matière d'origine des Fossati sous la dorure.
-
-### Bague
-
-```powershell
-& $blender -b -P bague/bague.py -- --taille 54 --motif losanges          # génère le STL
-& $blender -b -P rendu/rendu_blender.py -- --objet bague --res 3840 --samples 512 --out bague/images
-& $blender -b -P rendu/rendu_blender.py -- --objet bague --vues aucune --anim lumiere --res 2160 --samples 256
-```
+- `argent`, `acier`, `or_jaune`, `laiton`, `bronze_nu` : métaux réels (couleurs mesurées), avec
+  `--finition` (poli, poli ondulé, satiné, brossé, mixte) et de préférence `--studio oui`.
 
 ## 5. Animations
+
+### Vidéos de présentation (vitrine)
+
+```powershell
+& $blender -b -P rendu/rendu_blender.py -- --anim vitrine --format paysage --res 1920 --samples 512 --out rendu/videos
+```
+
+Options : `--duree`, `--ips`, `--amplitude`, `--vue_video`.
+
+Le mouvement, qui boucle parfaitement :
+- **caméra** : balayage de ±30° autour du masque (`--amplitude`), avec une légère montée-descente
+  deux fois plus rapide. La trajectoire dessine un huit, ce qui fait lire le relief. Elle part de la vue
+  `--vue_video` (`face` par défaut) ;
+- **lumière** : la lampe principale fait un tour complet autour du masque à sa hauteur. Les reflets
+  glissent sur les facettes, et elle passe en contre-jour à mi-parcours. Le contre-jour et le débouchage restent fixes.
+
+Le mouvement est enregistré en images clés : avec `--blend rendu/<nom>.blend`, la scène s'ouvre
+dans Blender et se rejoue (barre d'espace). Le calcul se fait image par image (PNG) dans
+`<out>/video_masque_<hauteur>p<ips>/`. La scène reste chargée d'une image à l'autre
+(« Persistent Data »), ce qui évite de tout recharger. Une image déjà écrite n'est pas recalculée :
+Ctrl+C, puis la même commande, et le calcul reprend. Quand toutes les images sont là, ffmpeg les
+assemble en `video_masque_<hauteur>p<ips>.mp4` (H.264, CRF 16). La hauteur figure dans le nom du
+dossier, donc un essai en basse définition ne se mélange pas avec le rendu final.
+
+Temps mesurés sur RTX 4080 (OptiX), 1080p à 512 échantillons : 1,5 à 2 s par image, soit
+15 à 20 min pour 20 s de vidéo (600 images). Compter environ 4 fois plus en 4K. 512 échantillons
+plutôt que 256 : le coût supplémentaire est faible, et le bruit résiduel scintille moins d'une image
+à l'autre.
+
+### Balancier et lumière (masque)
 
 ```powershell
 # la lumière rasante fait le tour du masque, caméra fixe (le plus spectaculaire sur les facettes)
@@ -116,6 +147,12 @@ ffmpeg -framerate 24 -i rendu/images/anim_lumiere_dore/%04d.png -c:v libx264 -cr
 ```
 
 ## 6. Retoucher la scène à la main
+
+Scènes prêtes à ouvrir dans `rendu/` (caméra sur la première vue, aperçu Cycles débruité) :
+`masque.blend` (masque cintré), `masque_polyedre.blend` (polyèdre pur).
+Pour en refaire une : ajouter `--vues aucune --blend rendu/<nom>.blend` à la commande de rendu
+voulue. Dans Blender : Edit → Preferences → System → Cycles Render Devices → OptiX,
+cocher la RTX 4080 (réglage de l'interface, non enregistré dans le fichier).
 
 ```powershell
 & $blender -b -P rendu/rendu_blender.py -- --vues aucune --blend rendu/masque.blend

@@ -200,7 +200,8 @@ def normal(pts, f):
 
 
 # ---------------------------------------------------------------- STL
-def write_stl(path, pts, faces, rim, base):
+def solide(pts, faces, rim, base):
+    """Triangles du solide fermé : relief + paroi + plaque de fond à z = -base."""
     tris = [tuple(pts[i] for i in f) for f in faces]
     bot = [(x, y, -base) for (x, y, _) in (pts[i] for i in rim)]
     c = (0.0, 0.0, -base)
@@ -211,6 +212,11 @@ def write_stl(path, pts, faces, rim, base):
         t0, t1 = pts[rim[i]], pts[rim[(i + 1) % m]]
         b0, b1 = bot[i], bot[(i + 1) % m]
         tris += [(t0, b0, b1), (t0, b1, t1)]
+    return tris
+
+
+def write_stl(path, pts, faces, rim, base, tris=None):
+    tris = tris or solide(pts, faces, rim, base)
     with open(path, "wb") as fh:
         fh.write(b"masque seraphin Hagia Sophia".ljust(80, b" "))
         fh.write(struct.pack("<I", len(tris)))
@@ -228,7 +234,7 @@ def _svg_head(a, b, pad=6):
             f'<g transform="scale(1,-1)">\n')
 
 
-def fold_edges(pts, faces, min_deg=1.0):
+def fold_edges(pts, faces, min_deg=1.0, lisses=None):
     """Plis = arêtes partagées par deux facettes non coplanaires.
     Renvoie [(i, j, 'M'|'V')] : M = montagne (convexe), V = vallée."""
     adj = {}
@@ -238,7 +244,7 @@ def fold_edges(pts, faces, min_deg=1.0):
     cmin = math.cos(math.radians(min_deg))
     out = []
     for (i, j), fs in adj.items():
-        if len(fs) != 2 or (i, j) in _LISSES:
+        if len(fs) != 2 or (i, j) in (_LISSES if lisses is None else lisses):
             continue
         f0, f1 = faces[fs[0]], faces[fs[1]]
         n0 = normal(pts, f0)
